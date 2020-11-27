@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/justinas/alice"
 	sessionsapi "github.com/oauth2-proxy/oauth2-proxy/v7/pkg/apis/sessions"
@@ -58,9 +59,10 @@ func getBasicSession(validator basic.Validator, req *http.Request) (*sessionsapi
 		return nil, err
 	}
 
-	if validator.Validate(user, password) {
+	validated, groups := validator.Validate(user, password)
+	if validated {
 		logger.PrintAuthf(user, req, logger.AuthSuccess, "Authenticated via basic auth and HTpasswd File")
-		return &sessionsapi.SessionState{User: user}, nil
+		return &sessionsapi.SessionState{User: user, Email: user, Groups: strings.Split(groups,",") }, nil
 	}
 
 	logger.PrintAuthf(user, req, logger.AuthFailure, "Invalid authentication via basic auth: not in Htpasswd File")

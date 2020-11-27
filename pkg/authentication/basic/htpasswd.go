@@ -17,6 +17,7 @@ import (
 // Passwords must be generated with -B for bcrypt or -s for SHA1.
 type htpasswdMap struct {
 	users map[string]interface{}
+	usersGroups map[string]interface{}
 }
 
 // bcryptPass is used to identify bcrypt passwords in the
@@ -61,18 +62,20 @@ func newHtpasswd(file io.Reader) (*htpasswdMap, error) {
 
 // createHtasswdMap constructs an htpasswdMap from the given records
 func createHtpasswdMap(records [][]string) (*htpasswdMap, error) {
-	h := &htpasswdMap{users: make(map[string]interface{})}
+	h := &htpasswdMap{users: make(map[string]interface{}),usersGroups: make(map[string]interface{})}
 	for _, record := range records {
-		user, realPassword := record[0], record[1]
+		user, realPassword, groups := record[0], record[1], record[2]
 		shaPrefix := realPassword[:5]
 		if shaPrefix == "{SHA}" {
 			h.users[user] = sha1Pass(realPassword[5:])
+			h.usersGroups[user] = groups
 			continue
 		}
 
 		bcryptPrefix := realPassword[:4]
 		if bcryptPrefix == "$2a$" || bcryptPrefix == "$2b$" || bcryptPrefix == "$2x$" || bcryptPrefix == "$2y$" {
 			h.users[user] = bcryptPass(realPassword)
+			h.usersGroups[user] = groups
 			continue
 		}
 
@@ -84,11 +87,13 @@ func createHtpasswdMap(records [][]string) (*htpasswdMap, error) {
 }
 
 // Validate checks a users password against the htpasswd entries
-func (h *htpasswdMap) Validate(user string, password string) bool {
+func (h *htpasswdMap) Validate(user string, password string) (bool,string) {
 	realPassword, exists := h.users[user]
 	if !exists {
-		return false
+		return false,""
 	}
+
+	groups := h.usersGroups[user].(string)
 
 	switch rp := realPassword.(type) {
 	case sha1Pass:
@@ -96,12 +101,12 @@ func (h *htpasswdMap) Validate(user string, password string) bool {
 		d := sha1.New() // #nosec G401
 		_, err := d.Write([]byte(password))
 		if err != nil {
-			return false
+			return false, ""
 		}
-		return string(rp) == base64.StdEncoding.EncodeToString(d.Sum(nil))
+		return string(rp) == base64.StdEncoding.EncodeToString(d.Sum(nil)), groups
 	case bcryptPass:
-		return bcrypt.CompareHashAndPassword([]byte(rp), []byte(password)) == nil
+		return bcrypt.CompareHashAndPassword([]byte(rp), []byte(password)) == nil, groups
 	default:
-		return false
+		return false, ""
 	}
 }

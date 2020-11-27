@@ -558,22 +558,23 @@ func (p *OAuthProxy) SignInPage(rw http.ResponseWriter, req *http.Request, code 
 }
 
 // ManualSignIn handles basic auth logins to the proxy
-func (p *OAuthProxy) ManualSignIn(req *http.Request) (string, bool) {
+func (p *OAuthProxy) ManualSignIn(req *http.Request) (string, string, bool) {
 	if req.Method != "POST" || p.basicAuthValidator == nil {
-		return "", false
+		return "", "", false
 	}
 	user := req.FormValue("username")
 	passwd := req.FormValue("password")
 	if user == "" {
-		return "", false
+		return "", "", false
 	}
 	// check auth
-	if p.basicAuthValidator.Validate(user, passwd) {
+	validated, groups := p.basicAuthValidator.Validate(user, passwd)
+	if validated {
 		logger.PrintAuthf(user, req, logger.AuthSuccess, "Authenticated via HtpasswdFile")
-		return user, true
+		return user, groups, true
 	}
 	logger.PrintAuthf(user, req, logger.AuthFailure, "Invalid authentication via HtpasswdFile")
-	return "", false
+	return "", "", false
 }
 
 // GetRedirect reads the query parameter to get the URL to redirect clients to
@@ -771,9 +772,9 @@ func (p *OAuthProxy) SignIn(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	user, ok := p.ManualSignIn(req)
+	user, groups, ok := p.ManualSignIn(req)
 	if ok {
-		session := &sessionsapi.SessionState{User: user}
+		session := &sessionsapi.SessionState{User: user, Email: user, Groups: strings.Split(groups,",") }
 		err = p.SaveSession(rw, req, session)
 		if err != nil {
 			logger.Printf("Error saving session: %v", err)
